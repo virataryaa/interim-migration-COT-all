@@ -1,0 +1,12 @@
+# Logs
+Automator/run_log.txt
+Code/logs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+Dashboard/run_dashboard.log
