@@ -1,12 +1,10 @@
 @echo off
-:: WEEKLY — COT ingest (LSEG) + Rollex sync + git push + email
+:: WEEKLY — COT ingest (LSEG) + Rollex sync + Roll Yield sync + git push + email
 :: Schedule: Friday, after CFTC release
-:: Adapted from ICEBREAKER/COT_ALL/Automator/run.bat. No RollYield sync step
-:: here — that's still a separate upstream project out of scope for this
-:: interim migration; the Dashboard falls back to its own Px column when
-:: RollYield-dependent data isn't present. Rollex IS now built (see the
-:: sibling Interim_Migration/Rollex project) and synced in below, same as
-:: the ICE original does via xcopy.
+:: Adapted from ICEBREAKER/COT_ALL/Automator/run.bat. Rollex and Roll Yield
+:: are both now built (see the sibling Interim_Migration/Rollex and
+:: Interim_Migration/Roll Yield projects) and synced in below via xcopy,
+:: same as the ICE original's run_daily.bat does for both.
 set PYTHONIOENCODING=utf-8
 set PYTHON=C:\Users\virat.arya\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe
 set LOG=C:\Users\virat.arya\ETG\SoftsDatabase - Documents\Database\Hardmine\Interim_Migration\COT_ALL\Automator\run_log.txt
@@ -36,6 +34,11 @@ echo [1b] Syncing Rollex parquets... >> "%LOG%"
 xcopy /Y "C:\Users\virat.arya\ETG\SoftsDatabase - Documents\Database\Hardmine\Interim_Migration\Rollex\Database\rollex_*.parquet" "C:\Users\virat.arya\ETG\SoftsDatabase - Documents\Database\Hardmine\Interim_Migration\COT_ALL\Database\Rollex\" >> "%LOG%" 2>&1
 if %ERRORLEVEL% NEQ 0 echo WARNING: Rollex sync had issues >> "%LOG%"
 
+:: Step 1c — Sync Roll Yield parquet from the Roll Yield (LSEG) master database
+echo [1c] Syncing Roll Yield parquet... >> "%LOG%"
+xcopy /Y "C:\Users\virat.arya\ETG\SoftsDatabase - Documents\Database\Hardmine\Interim_Migration\Roll Yield\Database\roll_yield_data.parquet" "C:\Users\virat.arya\ETG\SoftsDatabase - Documents\Database\Hardmine\Interim_Migration\COT_ALL\Database\RollYield\" >> "%LOG%" 2>&1
+if %ERRORLEVEL% NEQ 0 echo WARNING: Roll Yield sync had issues >> "%LOG%"
+
 :: Step 2 — Push updated parquets to GitHub
 echo [2] Pushing to GitHub... >> "%LOG%"
 cd /d "%REPO%"
@@ -44,7 +47,7 @@ if %ERRORLEVEL% NEQ 0 (
     set GIT_STATUS=failed
     goto notify
 )
-git add Database\cot_cit.parquet Database\cot_disagg_futopt.parquet Database\cot_disagg_fut.parquet Database\Rollex\rollex_*.parquet >> "%LOG%" 2>&1
+git add Database\cot_cit.parquet Database\cot_disagg_futopt.parquet Database\cot_disagg_fut.parquet Database\Rollex\rollex_*.parquet Database\RollYield\roll_yield_data.parquet >> "%LOG%" 2>&1
 git diff --cached --quiet >> "%LOG%" 2>&1
 if %ERRORLEVEL% NEQ 0 (
     git -c core.askpass= commit -m "Auto update: COT_ALL (LSEG) %date%" >> "%LOG%" 2>&1
