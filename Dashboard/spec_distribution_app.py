@@ -324,7 +324,7 @@ with tab_dist:
     # Keying on `unit` resets to the fresh default (1% vs auto-computed
     # k-lots) when the unit toggle flips, instead of carrying over a
     # stale value from the other mode's session state.
-    bc1, bc2 = st.columns(2)
+    bc1, bc2, bc3 = st.columns([1, 1, 1])
     with bc1:
         level_bin = st.number_input(
             f"Level bin size ({unit_label})", value=float(level_default),
@@ -337,7 +337,11 @@ with tab_dist:
             min_value=0.01, format="%.2f", key=f"ni_chg_bin_{unit}",
             help="Bucket width for the bottom row (weekly change histograms)."
         )
+    with bc3:
+        y_mode = st.radio("Y-axis", ["% of weeks", "Raw count"], key="rb_y_mode")
     bin_by_row = {1: level_bin, 2: chg_bin}
+    hist_norm  = "percent" if y_mode == "% of weeks" else None
+    y_axis_title = "% of weeks" if y_mode == "% of weeks" else "Weeks (count)"
 
     def _title_with_latest(key):
         if key not in panel_data or panel_data[key][0].empty:
@@ -360,7 +364,7 @@ with tab_dist:
         fig.add_trace(go.Histogram(
             x=series.values, xbins=dict(size=bin_by_row[row]), marker_color=color,
             marker_line=dict(color="white", width=1),
-            histnorm="percent", opacity=0.85, showlegend=False,
+            histnorm=hist_norm, opacity=0.85, showlegend=False,
         ), row=row, col=col)
         fig.add_vline(x=series.iloc[-1], line_dash="dash", line_color="#1a1a2e",
                       line_width=2, row=row, col=col)
@@ -371,7 +375,7 @@ with tab_dist:
         margin=dict(l=30, r=30, t=70, b=40),
         font=dict(family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif", size=11),
     )
-    fig.update_yaxes(title_text="% of weeks", title_font_size=10)
+    fig.update_yaxes(title_text=y_axis_title, title_font_size=10)
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.06)")
     st.plotly_chart(fig, use_container_width=True)
