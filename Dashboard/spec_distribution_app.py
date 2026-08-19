@@ -285,20 +285,26 @@ with tab_dist:
                 return round(m * magnitude, 6)
         return round(10 * magnitude, 6)
 
-    level_default = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 1])
-    chg_default   = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 2])
+    if use_pct:
+        level_default = chg_default = 1.0
+    else:
+        level_default = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 1])
+        chg_default   = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 2])
 
+    # Keying on `unit` resets to the fresh default (1% vs auto-computed
+    # k-lots) when the unit toggle flips, instead of carrying over a
+    # stale value from the other mode's session state.
     bc1, bc2 = st.columns(2)
     with bc1:
         level_bin = st.number_input(
             f"Level bin size ({unit_label})", value=float(level_default),
-            min_value=0.01, format="%.2f", key="ni_level_bin",
+            min_value=0.01, format="%.2f", key=f"ni_level_bin_{unit}",
             help="Bucket width for the top row (Net/Long/Short level histograms)."
         )
     with bc2:
         chg_bin = st.number_input(
             f"Weekly Δ bin size ({unit_label})", value=float(chg_default),
-            min_value=0.01, format="%.2f", key="ni_chg_bin",
+            min_value=0.01, format="%.2f", key=f"ni_chg_bin_{unit}",
             help="Bucket width for the bottom row (weekly change histograms)."
         )
     bin_by_row = {1: level_bin, 2: chg_bin}
