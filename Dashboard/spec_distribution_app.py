@@ -53,13 +53,20 @@ CIT_COMMS = {"KC", "CC", "SB", "CT"}
 
 CIT_SPEC = {
     "Large Spec":    {"long":"Spec Long",    "short":"Spec Short",    "net":"Spec Net"},
+    "Non-Rep":       {"long":"Non Rep Long", "short":"Non Rep Short", "net":"Non Rep Net"},
+    "Index Traders": {"long":"Index Long",   "short":"Index Short",   "net":"Index Net"},
+    "Large Spec + Non-Rep":          {"long":"Spec+NonRep Long",  "short":"Spec+NonRep Short",  "net":"Spec+NonRep Net"},
+    "Large Spec + Index + Non-Rep":  {"long":"Combined Spec Long","short":"Combined Spec Short","net":"Combined Spec Net"},
     "Commercial":    {"long":"Comm Long",    "short":"Comm Short",    "net":"Comm Net"},
 }
 DISAGG_SPEC = {
     "Managed Money": {"long":"MM Long",       "short":"MM Short",       "net":"MM Net"},
-    "Commercial (Producer)": {"long":"Producer Long", "short":"Producer Short", "net":"Comm Net"},
     "Other Rept":    {"long":"Other Long",    "short":"Other Short",    "net":"Other Net"},
+    "Non-Rep":       {"long":"Non Rep Long",  "short":"Non Rep Short",  "net":"Non Rep Net"},
     "Swap Dealers":  {"long":"Swap Long",     "short":"Swap Short",     "net":"Swap Net"},
+    "MM + Other + Non-Rep":         {"long":"MM+Other+NonRep Long","short":"MM+Other+NonRep Short","net":"MM+Other+NonRep Net"},
+    "MM + Other + Non-Rep + Swap":  {"long":"Combined Spec Long",  "short":"Combined Spec Short",  "net":"Combined Spec Net"},
+    "Commercial (Producer)": {"long":"Producer Long", "short":"Producer Short", "net":"Comm Net"},
 }
 LOOKBACKS = [1, 3, 5, 10]
 
@@ -97,6 +104,16 @@ def load_cit() -> pd.DataFrame:
     num = [c for c in df.columns if c not in ("Date", "Commodity", "Crop")]
     df[num] = df[num].astype(float)
     df = _derive_nets(df)
+    # Combined spec (CIT) = Large Spec + Non-Rep + Index
+    for side in ("Long", "Short"):
+        df[f"Combined Spec {side}"] = (
+            df.get(f"Spec {side}", 0) + df.get(f"Non Rep {side}", 0) + df.get(f"Index {side}", 0)
+        )
+    df["Combined Spec Net"] = df["Combined Spec Long"] - df["Combined Spec Short"]
+    # Large Spec + Non-Rep (excl. Index)
+    for side in ("Long", "Short"):
+        df[f"Spec+NonRep {side}"] = df.get(f"Spec {side}", 0) + df.get(f"Non Rep {side}", 0)
+    df["Spec+NonRep Net"] = df["Spec+NonRep Long"] - df["Spec+NonRep Short"]
     df = _add_pct(df)
     return df.sort_values(["Commodity", "Date"]).reset_index(drop=True)
 
@@ -108,6 +125,19 @@ def load_disagg(version: str) -> pd.DataFrame:
     num = [c for c in df.columns if c not in ("Date", "Commodity", "Crop")]
     df[num] = df[num].astype(float)
     df = _derive_nets(df)
+    # Combined spec (Disagg) = MM + Other + Non-Rep + Swap
+    for side in ("Long", "Short"):
+        df[f"Combined Spec {side}"] = (
+            df.get(f"MM {side}", 0) + df.get(f"Other {side}", 0)
+            + df.get(f"Non Rep {side}", 0) + df.get(f"Swap {side}", 0)
+        )
+    df["Combined Spec Net"] = df["Combined Spec Long"] - df["Combined Spec Short"]
+    # MM + Other + Non-Rep (excl. Swap)
+    for side in ("Long", "Short"):
+        df[f"MM+Other+NonRep {side}"] = (
+            df.get(f"MM {side}", 0) + df.get(f"Other {side}", 0) + df.get(f"Non Rep {side}", 0)
+        )
+    df["MM+Other+NonRep Net"] = df["MM+Other+NonRep Long"] - df["MM+Other+NonRep Short"]
     df = _add_pct(df)
     return df.sort_values(["Commodity", "Crop", "Date"]).reset_index(drop=True)
 
