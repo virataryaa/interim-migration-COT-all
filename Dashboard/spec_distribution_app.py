@@ -360,7 +360,7 @@ with tab_dist:
         fig.add_trace(go.Histogram(
             x=series.values, xbins=dict(size=bin_by_row[row]), marker_color=color,
             marker_line=dict(color="white", width=1),
-            opacity=0.85, showlegend=False,
+            histnorm="percent", opacity=0.85, showlegend=False,
         ), row=row, col=col)
         fig.add_vline(x=series.iloc[-1], line_dash="dash", line_color="#1a1a2e",
                       line_width=2, row=row, col=col)
@@ -371,6 +371,7 @@ with tab_dist:
         margin=dict(l=30, r=30, t=70, b=40),
         font=dict(family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif", size=11),
     )
+    fig.update_yaxes(title_text="% of weeks", title_font_size=10)
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.06)")
     st.plotly_chart(fig, use_container_width=True)
