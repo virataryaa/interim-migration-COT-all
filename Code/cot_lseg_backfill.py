@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+pd.set_option("future.no_silent_downcasting", True)  # silences a harmless lseg.data internal FutureWarning
 
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
