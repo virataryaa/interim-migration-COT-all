@@ -272,6 +272,37 @@ with tab_dist:
         panel_data[(1, i)] = (level_s, color, f"{name} — Level ({unit_label})")
         panel_data[(2, i)] = (chg_s,   color, f"{name} — Weekly Δ ({unit_label})")
 
+    def _auto_bin(series_list, target_bins=30):
+        """Pick a round-ish bin width from the combined range of a row's series."""
+        all_vals = pd.concat([s for s in series_list if not s.empty])
+        if all_vals.empty:
+            return 1.0
+        span = all_vals.max() - all_vals.min()
+        raw = span / target_bins if span > 0 else 1.0
+        magnitude = 10 ** np.floor(np.log10(raw))
+        for m in (1, 2, 2.5, 5, 10):
+            if raw <= m * magnitude:
+                return round(m * magnitude, 6)
+        return round(10 * magnitude, 6)
+
+    level_default = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 1])
+    chg_default   = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 2])
+
+    bc1, bc2 = st.columns(2)
+    with bc1:
+        level_bin = st.number_input(
+            f"Level bin size ({unit_label})", value=float(level_default),
+            min_value=0.01, format="%.2f", key="ni_level_bin",
+            help="Bucket width for the top row (Net/Long/Short level histograms)."
+        )
+    with bc2:
+        chg_bin = st.number_input(
+            f"Weekly Δ bin size ({unit_label})", value=float(chg_default),
+            min_value=0.01, format="%.2f", key="ni_chg_bin",
+            help="Bucket width for the bottom row (weekly change histograms)."
+        )
+    bin_by_row = {1: level_bin, 2: chg_bin}
+
     def _title_with_latest(key):
         if key not in panel_data or panel_data[key][0].empty:
             return panel_data.get(key, (None, None, ""))[2]
@@ -291,7 +322,7 @@ with tab_dist:
         if series.empty:
             continue
         fig.add_trace(go.Histogram(
-            x=series.values, nbinsx=36, marker_color=color,
+            x=series.values, xbins=dict(size=bin_by_row[row]), marker_color=color,
             marker_line=dict(color="white", width=1),
             opacity=0.85, showlegend=False,
         ), row=row, col=col)
