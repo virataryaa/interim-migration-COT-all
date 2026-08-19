@@ -178,8 +178,13 @@ if df.empty or missing:
     st.warning(f"No data available for {commodity} / {report} / {category}.")
     st.stop()
 
+st.caption(
+    f"**Latest COT date:** {df['Date'].max().strftime('%d %b %Y')}  |  "
+    f"**Full history:** {df['Date'].min().strftime('%d %b %Y')} → {df['Date'].max().strftime('%d %b %Y')}"
+)
 
-tab_matrix, tab_dist = st.tabs(["Z-Score Matrix", "Distribution"])
+
+tab_dist, tab_matrix = st.tabs(["Distribution", "Z-Score Matrix"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — Z-SCORE MATRIX (all single commodities, Disagg Fut, chosen category)
@@ -189,6 +194,8 @@ with tab_matrix:
         "All 7 single commodities, Disaggregated (Futures-only) report — so RC/LCC/LSU "
         "(no CIT report) sit on the same basis as KC/CC/SB/CT. Category applies across the board."
     )
+    _matrix_ref = load_disagg("Fut")
+    st.caption(f"**Latest COT date:** {_matrix_ref['Date'].max().strftime('%d %b %Y')}")
     matrix_category = st.selectbox(
         "Category (matrix)", list(DISAGG_SPEC.keys()), key="sb_matrix_category"
     )
@@ -239,6 +246,11 @@ with tab_dist:
         cutoff = d["Date"].max() - pd.DateOffset(years=years)
         d = d[d["Date"] >= cutoff]
 
+    st.caption(
+        f"Study period: **{d['Date'].min().strftime('%d %b %Y')} → {d['Date'].max().strftime('%d %b %Y')}** "
+        f"({len(d)} weekly observations)"
+    )
+
     use_pct = unit.startswith("%")
     def _col(base):
         return f"Pct OI {base}" if use_pct else base
@@ -247,40 +259,53 @@ with tab_dist:
 
     metrics = [("Net", cols["net"], C_NET), ("Long", cols["long"], C_LONG), ("Short", cols["short"], C_SHORT)]
 
-    def _hist_panel(fig, row, col, series, title, color):
-        if series.empty:
-            return
-        latest = series.iloc[-1]
-        fig.add_trace(go.Histogram(x=series.values, nbinsx=40, marker_color=color,
-                                    opacity=0.75, showlegend=False), row=row, col=col)
-        fig.add_vline(x=latest, line_dash="dash", line_color="#1a1a2e", line_width=2,
-                       row=row, col=col,
-                       annotation_text=f"Latest: {latest:,.1f}", annotation_position="top",
-                       annotation_font_size=10)
-        fig.update_xaxes(title_text=title, row=row, col=col, title_font_size=11)
-
-    fig = make_subplots(
-        rows=2, cols=3,
-        subplot_titles=[f"{m[0]} — Level ({unit_label})" for m in metrics] +
-                        [f"{m[0]} — Weekly Change ({unit_label})" for m in metrics],
-        vertical_spacing=0.16, horizontal_spacing=0.06,
-    )
-
+    # Pre-compute every series first so subplot titles can bake in the
+    # latest value — avoids stacking a separate annotation on top of the
+    # title, which is what was colliding with the chart in the first version.
+    panel_data = {}  # (row, col) -> (series, color)
     for i, (name, base_col, color) in enumerate(metrics, start=1):
         raw_col = _col(base_col)
         if raw_col not in d.columns:
             continue
         level_s = pd.to_numeric(d[raw_col], errors="coerce").dropna() / unit_div
         chg_s   = level_s.diff().dropna()
-        _hist_panel(fig, 1, i, level_s, f"{name} ({unit_label})", color)
-        _hist_panel(fig, 2, i, chg_s,   f"{name} Δ ({unit_label})", color)
+        panel_data[(1, i)] = (level_s, color, f"{name} — Level ({unit_label})")
+        panel_data[(2, i)] = (chg_s,   color, f"{name} — Weekly Δ ({unit_label})")
+
+    def _title_with_latest(key):
+        if key not in panel_data or panel_data[key][0].empty:
+            return panel_data.get(key, (None, None, ""))[2]
+        series, _, base_title = panel_data[key]
+        return f"{base_title}   ·   latest {series.iloc[-1]:,.1f}"
+
+    fig = make_subplots(
+        rows=2, cols=3,
+        subplot_titles=[_title_with_latest((1, i)) for i in range(1, 4)] +
+                        [_title_with_latest((2, i)) for i in range(1, 4)],
+        vertical_spacing=0.22, horizontal_spacing=0.07,
+    )
+    for ann in fig.layout.annotations:
+        ann.font.size = 12
+
+    for (row, col), (series, color, _) in panel_data.items():
+        if series.empty:
+            continue
+        fig.add_trace(go.Histogram(
+            x=series.values, nbinsx=36, marker_color=color,
+            marker_line=dict(color="white", width=1),
+            opacity=0.85, showlegend=False,
+        ), row=row, col=col)
+        fig.add_vline(x=series.iloc[-1], line_dash="dash", line_color="#1a1a2e",
+                      line_width=2, row=row, col=col)
 
     fig.update_layout(
-        height=650, template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=30, r=30, t=60, b=40),
+        height=700, template="plotly_white", bargap=0.04,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fafafa",
+        margin=dict(l=30, r=30, t=70, b=40),
         font=dict(family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif", size=11),
     )
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.06)")
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
         f"Distribution of {category} Net/Long/Short — level and week-over-week change — "
