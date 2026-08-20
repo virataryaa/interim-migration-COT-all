@@ -318,7 +318,7 @@ with tab_dist:
         panel_data[(1, i)] = (level_s, color, f"{name} — Level ({unit_label})")
         panel_data[(2, i)] = (chg_s,   color, f"{name} — Weekly Δ ({unit_label})")
 
-    def _auto_bin(series_list, target_bins=30):
+    def _auto_bin(series_list, target_bins=60):
         """Pick a round-ish bin width from the combined range of a row's series."""
         all_vals = pd.concat([s for s in series_list if not s.empty])
         if all_vals.empty:
@@ -332,10 +332,10 @@ with tab_dist:
         return round(10 * magnitude, 6)
 
     # Bin sizes are no longer user-editable — always the auto-computed
-    # default (1% per bucket in %OI mode, or a round-ish width targeting
-    # ~30 bins in raw k-lots mode).
+    # default (0.5% per bucket in %OI mode, or a round-ish width targeting
+    # ~60 bins in raw k-lots mode).
     if use_pct:
-        level_bin = chg_bin = 1.0
+        level_bin = chg_bin = 0.5
     else:
         level_bin = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 1])
         chg_bin   = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 2])
@@ -397,7 +397,7 @@ with tab_dist:
         px_lvl = (d[["Date"]].merge(rollex_df, on="Date", how="inner")
                   .sort_values("Date").reset_index(drop=True))
         px_level_s = px_lvl["rollex_px"].dropna()
-        px_chg_s   = px_level_s.diff().dropna()
+        px_chg_s   = (px_level_s.pct_change() * 100).dropna()  # weekly % change, not absolute
 
         if px_level_s.empty:
             st.info("No overlapping weeks between COT dates and Rollex price data.")
@@ -409,7 +409,7 @@ with tab_dist:
                 rows=1, cols=2,
                 subplot_titles=[
                     f"Price — Level   ·   latest {px_level_s.iloc[-1]:,.2f}",
-                    f"Price — Weekly Δ   ·   latest {px_chg_s.iloc[-1]:,.2f}" if not px_chg_s.empty else "Price — Weekly Δ",
+                    f"Price — Weekly Δ %   ·   latest {px_chg_s.iloc[-1]:+.2f}%" if not px_chg_s.empty else "Price — Weekly Δ %",
                 ],
                 horizontal_spacing=0.08,
             )
@@ -441,7 +441,7 @@ with tab_dist:
             st.plotly_chart(fig_px, use_container_width=True)
             st.caption(
                 "Distribution of the Rollex (roll-adjusted) price — level and week-over-week "
-                "change — over the same study period and date range as the positioning "
+                "% change — over the same study period and date range as the positioning "
                 f"histograms above. Dashed line marks the latest value "
                 f"({px_lvl['Date'].iloc[-1].strftime('%d %b %Y')})."
             )
