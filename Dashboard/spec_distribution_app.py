@@ -38,10 +38,11 @@ st.markdown("""
 </style>""", unsafe_allow_html=True)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-DB_DIR   = Path(__file__).resolve().parent.parent / "Database"
-CIT_FILE = DB_DIR / "cot_cit.parquet"
-FO_FILE  = DB_DIR / "cot_disagg_futopt.parquet"
-FUT_FILE = DB_DIR / "cot_disagg_fut.parquet"
+DB_DIR     = Path(__file__).resolve().parent.parent / "Database"
+CIT_FILE   = DB_DIR / "cot_cit.parquet"
+FO_FILE    = DB_DIR / "cot_disagg_futopt.parquet"
+FUT_FILE   = DB_DIR / "cot_disagg_fut.parquet"
+ROLLEX_DIR = DB_DIR / "Rollex"
 
 # ── Commodity config — single commodities only (no KRC/CLC/SLS combined legs) ──
 COMM_COLORS = {"KC":"#1a56db","CC":"#d97706","SB":"#059669","CT":"#7c3aed",
@@ -55,7 +56,7 @@ CIT_SPEC = {
     "Large Spec":    {"long":"Spec Long",    "short":"Spec Short",    "net":"Spec Net"},
     "Non-Rep":       {"long":"Non Rep Long", "short":"Non Rep Short", "net":"Non Rep Net"},
     "Index Traders": {"long":"Index Long",   "short":"Index Short",   "net":"Index Net"},
-    "Large Spec + Non-Rep":          {"long":"Spec+NonRep Long",  "short":"Spec+NonRep Short",  "net":"Spec+NonRep Net"},
+    "Large + Small":                 {"long":"Spec+NonRep Long",  "short":"Spec+NonRep Short",  "net":"Spec+NonRep Net"},
     "Large Spec + Index + Non-Rep":  {"long":"Combined Spec Long","short":"Combined Spec Short","net":"Combined Spec Net"},
     "Commercial":    {"long":"Comm Long",    "short":"Comm Short",    "net":"Comm Net"},
 }
@@ -65,7 +66,7 @@ DISAGG_SPEC = {
     "Non-Rep":       {"long":"Non Rep Long",  "short":"Non Rep Short",  "net":"Non Rep Net"},
     "Swap Dealers":  {"long":"Swap Long",     "short":"Swap Short",     "net":"Swap Net"},
     "MM + Other + Non-Rep":         {"long":"MM+Other+NonRep Long","short":"MM+Other+NonRep Short","net":"MM+Other+NonRep Net"},
-    "MM + Other + Non-Rep + Swap":  {"long":"Combined Spec Long",  "short":"Combined Spec Short",  "net":"Combined Spec Net"},
+    "MM + Non-Rep":                 {"long":"MM+NonRep Long",      "short":"MM+NonRep Short",      "net":"MM+NonRep Net"},
     "Commercial (Producer)": {"long":"Producer Long", "short":"Producer Short", "net":"Comm Net"},
 }
 LOOKBACKS = [1, 3, 5, 10]
@@ -138,8 +139,23 @@ def load_disagg(version: str) -> pd.DataFrame:
             df.get(f"MM {side}", 0) + df.get(f"Other {side}", 0) + df.get(f"Non Rep {side}", 0)
         )
     df["MM+Other+NonRep Net"] = df["MM+Other+NonRep Long"] - df["MM+Other+NonRep Short"]
+    # MM + Non-Rep only (excl. Other, Swap)
+    for side in ("Long", "Short"):
+        df[f"MM+NonRep {side}"] = df.get(f"MM {side}", 0) + df.get(f"Non Rep {side}", 0)
+    df["MM+NonRep Net"] = df["MM+NonRep Long"] - df["MM+NonRep Short"]
     df = _add_pct(df)
     return df.sort_values(["Commodity", "Crop", "Date"]).reset_index(drop=True)
+
+
+@st.cache_data(ttl=600)
+def load_rollex(commodity: str) -> pd.DataFrame:
+    path = ROLLEX_DIR / f"rollex_{commodity}.parquet"
+    if not path.exists():
+        return pd.DataFrame(columns=["Date", "rollex_px"])
+    r = pd.read_parquet(path, columns=["rollex_px"]).reset_index()
+    r = r.rename(columns={r.columns[0]: "Date"})
+    r["Date"] = pd.to_datetime(r["Date"])
+    return r[["Date", "rollex_px"]]
 
 
 def _series_for(df: pd.DataFrame, col: str) -> pd.Series:
@@ -315,30 +331,16 @@ with tab_dist:
                 return round(m * magnitude, 6)
         return round(10 * magnitude, 6)
 
+    # Bin sizes are no longer user-editable — always the auto-computed
+    # default (1% per bucket in %OI mode, or a round-ish width targeting
+    # ~30 bins in raw k-lots mode).
     if use_pct:
-        level_default = chg_default = 1.0
+        level_bin = chg_bin = 1.0
     else:
-        level_default = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 1])
-        chg_default   = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 2])
+        level_bin = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 1])
+        chg_bin   = _auto_bin([panel_data[k][0] for k in panel_data if k[0] == 2])
 
-    # Keying on `unit` resets to the fresh default (1% vs auto-computed
-    # k-lots) when the unit toggle flips, instead of carrying over a
-    # stale value from the other mode's session state.
-    bc1, bc2, bc3 = st.columns([1, 1, 1])
-    with bc1:
-        level_bin = st.number_input(
-            f"Level bin size ({unit_label})", value=float(level_default),
-            min_value=0.01, format="%.2f", key=f"ni_level_bin_{unit}",
-            help="Bucket width for the top row (Net/Long/Short level histograms)."
-        )
-    with bc2:
-        chg_bin = st.number_input(
-            f"Weekly Δ bin size ({unit_label})", value=float(chg_default),
-            min_value=0.01, format="%.2f", key=f"ni_chg_bin_{unit}",
-            help="Bucket width for the bottom row (weekly change histograms)."
-        )
-    with bc3:
-        y_mode = st.radio("Y-axis", ["% of weeks", "Raw count"], key="rb_y_mode")
+    y_mode = st.radio("Y-axis", ["% of weeks", "Raw count"], key="rb_y_mode", horizontal=True)
     bin_by_row = {1: level_bin, 2: chg_bin}
     hist_norm  = "percent" if y_mode == "% of weeks" else None
     y_axis_title = "% of weeks" if y_mode == "% of weeks" else "Weeks (count)"
@@ -384,3 +386,62 @@ with tab_dist:
         f"over the selected history window. Dashed line marks the latest data point "
         f"({d['Date'].max().strftime('%d %b %Y') if not d.empty else '—'})."
     )
+
+    # ── Rollex Price — Level and Weekly Δ histograms ────────────────────────
+    st.divider()
+    st.markdown("**Rollex Price Distribution**")
+    rollex_df = load_rollex(commodity)
+    if rollex_df.empty:
+        st.info("Rollex price data not available for this commodity.")
+    else:
+        px_lvl = (d[["Date"]].merge(rollex_df, on="Date", how="inner")
+                  .sort_values("Date").reset_index(drop=True))
+        px_level_s = px_lvl["rollex_px"].dropna()
+        px_chg_s   = px_level_s.diff().dropna()
+
+        if px_level_s.empty:
+            st.info("No overlapping weeks between COT dates and Rollex price data.")
+        else:
+            px_level_bin = _auto_bin([px_level_s])
+            px_chg_bin   = _auto_bin([px_chg_s]) if not px_chg_s.empty else 1.0
+
+            fig_px = make_subplots(
+                rows=1, cols=2,
+                subplot_titles=[
+                    f"Price — Level   ·   latest {px_level_s.iloc[-1]:,.2f}",
+                    f"Price — Weekly Δ   ·   latest {px_chg_s.iloc[-1]:,.2f}" if not px_chg_s.empty else "Price — Weekly Δ",
+                ],
+                horizontal_spacing=0.08,
+            )
+            fig_px.add_trace(go.Histogram(
+                x=px_level_s.values, xbins=dict(size=px_level_bin), marker_color="#f59e0b",
+                marker_line=dict(color="white", width=1), histnorm=hist_norm,
+                opacity=0.85, showlegend=False,
+            ), row=1, col=1)
+            fig_px.add_vline(x=px_level_s.iloc[-1], line_dash="dash", line_color="#1a1a2e",
+                             line_width=2, row=1, col=1)
+            if not px_chg_s.empty:
+                fig_px.add_trace(go.Histogram(
+                    x=px_chg_s.values, xbins=dict(size=px_chg_bin), marker_color="#f59e0b",
+                    marker_line=dict(color="white", width=1), histnorm=hist_norm,
+                    opacity=0.85, showlegend=False,
+                ), row=1, col=2)
+                fig_px.add_vline(x=px_chg_s.iloc[-1], line_dash="dash", line_color="#1a1a2e",
+                                 line_width=2, row=1, col=2)
+
+            fig_px.update_layout(
+                height=380, template="plotly_white", bargap=0.04,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fafafa",
+                margin=dict(l=30, r=30, t=50, b=40),
+                font=dict(family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif", size=11),
+            )
+            fig_px.update_yaxes(title_text=y_axis_title, title_font_size=10)
+            fig_px.update_xaxes(showgrid=False)
+            fig_px.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.06)")
+            st.plotly_chart(fig_px, use_container_width=True)
+            st.caption(
+                "Distribution of the Rollex (roll-adjusted) price — level and week-over-week "
+                "change — over the same study period and date range as the positioning "
+                f"histograms above. Dashed line marks the latest value "
+                f"({px_lvl['Date'].iloc[-1].strftime('%d %b %Y')})."
+            )
