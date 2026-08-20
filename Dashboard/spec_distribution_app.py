@@ -422,7 +422,9 @@ with tab_dist:
             )
             fig_px.update_yaxes(title_text=y_axis_title, title_font_size=10, showgrid=True, gridcolor="rgba(0,0,0,0.06)")
             fig_px.update_xaxes(title_text="Weekly Price Change %", showgrid=False)
-            st.plotly_chart(fig_px, use_container_width=True)
+            px_col, _spacer = st.columns([1, 1])
+            with px_col:
+                st.plotly_chart(fig_px, use_container_width=True)
             st.caption(
                 "Distribution of the Rollex (roll-adjusted) price's week-over-week % change, "
                 "over the same study period and date range as the positioning histograms above. "
