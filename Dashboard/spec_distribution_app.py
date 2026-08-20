@@ -387,9 +387,9 @@ with tab_dist:
         f"({d['Date'].max().strftime('%d %b %Y') if not d.empty else '—'})."
     )
 
-    # ── Rollex Price — Level and Weekly Δ histograms ────────────────────────
+    # ── Rollex Price — Weekly % Change histogram ────────────────────────────
     st.divider()
-    st.markdown("**Rollex Price Distribution**")
+    st.markdown("**Rollex Price Weekly % Change**")
     rollex_df = load_rollex(commodity)
     if rollex_df.empty:
         st.info("Rollex price data not available for this commodity.")
@@ -399,49 +399,32 @@ with tab_dist:
         px_level_s = px_lvl["rollex_px"].dropna()
         px_chg_s   = (px_level_s.pct_change() * 100).dropna()  # weekly % change, not absolute
 
-        if px_level_s.empty:
+        if px_chg_s.empty:
             st.info("No overlapping weeks between COT dates and Rollex price data.")
         else:
-            px_level_bin = _auto_bin([px_level_s])
-            px_chg_bin   = _auto_bin([px_chg_s]) if not px_chg_s.empty else 1.0
+            px_chg_bin = _auto_bin([px_chg_s])
+            title = f"Weekly Price Change %   ·   latest {px_chg_s.iloc[-1]:+.2f}%"
 
-            fig_px = make_subplots(
-                rows=1, cols=2,
-                subplot_titles=[
-                    f"Price — Level   ·   latest {px_level_s.iloc[-1]:,.2f}",
-                    f"Price — Weekly Δ %   ·   latest {px_chg_s.iloc[-1]:+.2f}%" if not px_chg_s.empty else "Price — Weekly Δ %",
-                ],
-                horizontal_spacing=0.08,
-            )
+            fig_px = go.Figure()
             fig_px.add_trace(go.Histogram(
-                x=px_level_s.values, xbins=dict(size=px_level_bin), marker_color="#f59e0b",
+                x=px_chg_s.values, xbins=dict(size=px_chg_bin), marker_color="#f59e0b",
                 marker_line=dict(color="white", width=1), histnorm=hist_norm,
                 opacity=0.85, showlegend=False,
-            ), row=1, col=1)
-            fig_px.add_vline(x=px_level_s.iloc[-1], line_dash="dash", line_color="#1a1a2e",
-                             line_width=2, row=1, col=1)
-            if not px_chg_s.empty:
-                fig_px.add_trace(go.Histogram(
-                    x=px_chg_s.values, xbins=dict(size=px_chg_bin), marker_color="#f59e0b",
-                    marker_line=dict(color="white", width=1), histnorm=hist_norm,
-                    opacity=0.85, showlegend=False,
-                ), row=1, col=2)
-                fig_px.add_vline(x=px_chg_s.iloc[-1], line_dash="dash", line_color="#1a1a2e",
-                                 line_width=2, row=1, col=2)
+            ))
+            fig_px.add_vline(x=px_chg_s.iloc[-1], line_color="#1a1a2e", line_width=2)
 
             fig_px.update_layout(
-                height=380, template="plotly_white", bargap=0.04,
+                title=dict(text=title, font=dict(size=13)),
+                height=340, template="plotly_white", bargap=0.04,
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#fafafa",
                 margin=dict(l=30, r=30, t=50, b=40),
                 font=dict(family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif", size=11),
             )
-            fig_px.update_yaxes(title_text=y_axis_title, title_font_size=10)
-            fig_px.update_xaxes(showgrid=False)
-            fig_px.update_yaxes(showgrid=True, gridcolor="rgba(0,0,0,0.06)")
+            fig_px.update_yaxes(title_text=y_axis_title, title_font_size=10, showgrid=True, gridcolor="rgba(0,0,0,0.06)")
+            fig_px.update_xaxes(title_text="Weekly Price Change %", showgrid=False)
             st.plotly_chart(fig_px, use_container_width=True)
             st.caption(
-                "Distribution of the Rollex (roll-adjusted) price — level and week-over-week "
-                "% change — over the same study period and date range as the positioning "
-                f"histograms above. Dashed line marks the latest value "
-                f"({px_lvl['Date'].iloc[-1].strftime('%d %b %Y')})."
+                "Distribution of the Rollex (roll-adjusted) price's week-over-week % change, "
+                "over the same study period and date range as the positioning histograms above. "
+                f"Solid line marks the latest value ({px_lvl['Date'].iloc[-1].strftime('%d %b %Y')})."
             )
